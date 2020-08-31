@@ -1,59 +1,42 @@
 function Get-PowerAppPalette {
-    param([Parameter(ValueFromPipeline)][ValidateNotNullOrEmpty()]$customTheme = $script:ThemeData
-        , [switch]$IncludeReferences)
+    param([Parameter(ValueFromPipeline)][ValidateNotNullOrEmpty()]$customTheme)
 
-    If(-not (ValidatePalette $customTheme)) { throw "Invalid CustomTheme!" }
-    
-        foreach($p in $jsonPaletteData) {
-
+    if($customTheme) {
+        if(-not (ValidateTheme $customTheme)) { throw "Invalid CustomTheme!" }
     }
+    elseif($script:ThemeData) { $customTheme = $script:ThemeData}
+    else { throw "No Custom Theme provided nor has a PowerAppTheme been opened!" }
 
-    $typeNameProp = @{
-        MemberType = "ScriptProperty"
-        Name = "TypeName"
-        Passthru = $true
-        Value = {
-            Switch($this.type) {
-                "c" {"Color"}
-                "x" {"Variable"}
-                "e" {"Expression"}
-                "n" {"Number"}
-                "![]" {"Array"}
-            }            
-        }
-        SecondValue = {
-            param($value)
-            Switch($value) {
-                "Color" {$this.type = "c"} 
-                "Variable" {$this.type = "x"} 
-                "Expression" {$this.type = "e"} 
-                "Number" {$this.type = "n"} 
-                "Array" {$this.type = "![]"} 
-                default {
-                    Write-Warning "Specify one of ['Array', 'Color', 'Expression', 'Number', 'Variable']. Invalid Option: '$value'"
-                }
-            }
-        }
-    }
-    
-    [scriptblock]$NewLogic = {
+    $customTheme.palette.foreach({
+        $pSearch = "%Palette.{0}%" -f $_.Name
         [PSCustomObject]@{
-            PaletteName = $_.Name
-            Value = $_.Value
+            PSTypeName = "PowerApp.Palette"
+            Name = $_.name
+            Value = $_.value
             Type = $_.type
-        } | Add-Member @typeNameProp
-    }
-  
-    if($jsonPath) { $jsonPath = Get-Content -Raw -Path $jsonPath | ConvertFrom-Json }
-    if($jsonData.CustomThemes) {
-        $jsonData.CustomThemes |
-            Select-Object -First 1 -ExpandProperty palette |
-            ForEach-Object $NewLogic
-    }
-    elseif($jsonData.palette) {
-        $jsonData.palette |
-        ForEach-Object $NewLogic
-    }    
+            TypeDescription = Switch($_.type) {
+                    "c" {"Color"}
+                    "x" {"Variable"}
+                    "e" {"Expression"}
+                    "n" {"Number"}
+                    "![]" {"Array"}
+                }
+            References = $customTheme.styles.foreach({
+                $s = $_
+                $s.propertyValuesMap.
+                    where({$_.value -eq $pSearch}).
+                    foreach({
+                        [PSCustomObject]@{
+                            PSTypeName = "PowerApp.StylePropertyReference"
+                            Style = $s.name
+                            Control = $s.controlTemplateName
+                            Property = $_.property
+                            PropertyValue = $_.value
+                        }
+                    })
+            }) | Sort-Object Control, Style
+        }
+    })
 }
 
 Export-ModuleMember -Function Get-PowerAppPalette
